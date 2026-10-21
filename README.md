@@ -1,222 +1,88 @@
-# 🛡️ PharmaGuard AI
+# PharmaGuard AI — Complaint Intake & Quality Triage
 
-PharmaGuard AI is an AI-powered pharmaceutical complaint management system built for the Avioa AI Internship Assignment.
+PharmaGuard AI is a prototype for collecting pharmaceutical product complaints, extracting structured details from chat/PDF input, applying transparent rule-based severity heuristics, and helping a quality team organise cases for follow-up.
 
-The idea behind this project was to simplify how pharmaceutical complaints are handled. Instead of manually reading complaint forms, users can either describe the issue in a chat or upload a complaint PDF. The system extracts the important information, classifies the complaint severity and generates a structured complaint report.
+It uses an LLM to assist with extraction, but a deterministic keyword rule currently assigns the final severity. It is a learning project, not a validated pharmacovigilance system or a replacement for approved safety-reporting procedures.
 
----
+## Problem addressed
 
-## Why We Built This
+When complaints arrive through chat messages and PDF forms, details such as product, strength, batch number and description can be inconsistent. Teams need a structured case record and a way to notice potentially related complaints without treating an automated signal as proof.
 
-Pharmaceutical companies receive many complaints related to damaged products, wrong labeling, packaging defects and safety issues.
+## Core workflow
 
-Managing these complaints manually takes time and increases the chances of missing important details.
+1. Receive complaint details through the chat interface or extract text from a complaint PDF.
+2. Use the LLM to propose structured fields while preserving the conversation's existing case ID when the user corrects information.
+3. Apply the existing deterministic keyword severity rules and show the reason/action with the result.
+4. Save sufficiently complete complaints into a local SQLite case register.
+5. Append a create/update event when a case is created or its stored fields change.
+6. Group recent reports with the same normalised product name and batch number into **potential repeat-batch signals** for human review.
+7. Show live dashboard counts, a saved-case table, and the repeat-batch signals in the React UI.
 
-This project explores how Large Language Models and AI Agents can assist in collecting complaint information, organizing it into a structured format and helping quality teams prioritize cases.
+## Improvements in this version
 
----
+- **Persistent case register:** complaint records survive backend restarts instead of living only in process memory.
+- **Stable case IDs:** later edits to the same conversation update the existing complaint record instead of silently creating a second ID.
+- **Case event history:** create/update actions are recorded with changed field names and a UTC timestamp.
+- **Potential repeated-batch detection:** two or more reports for the same product/batch in a configurable recent window appear in a review list. Critical-case counts help reviewers choose what to inspect first.
+- **Live dashboard metrics:** Total, Critical, Pending and Resolved cards are computed from saved records; they are not hard-coded sample numbers.
+- **Review API:** list, inspect and retrieve events for saved complaints; query product/batch signals through dedicated endpoints.
+- **Focused automated tests and CI:** SQLite persistence, same-ID edits, batch grouping, summary counts and validation are covered by pytest.
 
-## Features
+## Safety and interpretation
 
-- AI chatbot for complaint registration
-- Upload and analyze complaint PDFs
-- Automatic extraction of complaint details
-- Intelligent severity classification
-- Complaint correction through conversation
-- Structured complaint report generation
-- Clean dashboard interface built with React
+- A repeated product/batch signal is **not** a confirmed quality defect, adverse reaction, or causal link. It is a prompt to verify product/batch identity and inspect source cases under approved procedures.
+- Severity classification remains a simple keyword heuristic. It can miss serious cases, flag context incorrectly, or misunderstand negation. It should not be used as the sole decision-maker for patient safety or regulatory reporting.
+- The prototype does not validate complaint information against an authoritative product master, lot-release system, or external safety database.
+- There is no authentication or role-based access control in the demo. Do not expose it to the public internet or put real patient/customer identifiers into an untrusted deployment.
+- The case store is local SQLite by default at `backend/data/complaints.sqlite3`. Set `PHARMAGUARD_DB_PATH` to choose another path. The database file is runtime data and should not be committed.
 
----
+## Technology
 
-## How It Works
+- **Frontend:** React, Vite
+- **API:** FastAPI
+- **AI workflow:** LangGraph, Groq API, Llama 3.1 8B Instant
+- **PDF text extraction:** PyMuPDF
+- **Persistence:** Python `sqlite3`
+- **Tests:** pytest and GitHub Actions
 
-The user can either:
-
-- Describe a complaint in the chat
-- Upload a complaint PDF
-
-The backend extracts the information and sends it through a LangGraph workflow.
-
-The AI identifies important complaint details such as:
-
-- Customer Name
-- Product Name
-- Batch Number
-- Complaint Description
-
-The system then classifies the complaint as:
-
-- Critical
-- Major
-- Minor
-
-Finally, the processed complaint is displayed in the Complaint Intelligence Report.
-
----
-
-## Technology Used
-
-### Frontend
-
-- React
-- CSS
+## Running locally
 
 ### Backend
 
-- FastAPI
-- Python
+From the `backend/app` directory (adjust to your existing environment and installed packages):
 
-### AI
+    uvicorn main:app --reload
 
-- LangGraph
-- Groq API
-- Llama 3.1 8B Instant
+Set `GROQ_API_KEY` in your local environment before starting the backend. The first complete complaint initialises the database automatically; the API startup also creates its tables.
 
-### PDF Processing
+### Frontend
 
-- PyMuPDF (fitz)
+From `frontend/`:
 
----
+    npm install
+    npm run dev
 
-## Project Structure
+The frontend expects the backend at `http://127.0.0.1:8000` in this development configuration.
 
-backend/
+### Test the persistence layer
 
-- FastAPI APIs
-- LangGraph workflow
-- AI service
-- Complaint tools
+From the repository root:
 
-frontend/
+    python -m pip install pytest
+    python -m pytest backend/tests/test_case_store.py -q
 
-- React application
-- Dashboard
-- AI Chat Interface
+## API endpoints added
 
-uploads/
+- `GET /complaints?limit=50` — list recent saved cases; supports `severity`, `status` and `batch_number` filters.
+- `GET /complaints/{complaint_id}` — fetch one saved case.
+- `GET /complaints/{complaint_id}/events` — retrieve create/update event history.
+- `GET /analytics/summary` — return live dashboard counts.
+- `GET /analytics/batch-signals?days=30&min_reports=2` — find repeated product/batch reports in the selected window.
 
-- Uploaded complaint PDFs
+## Why I built it
 
----
+I wanted to demonstrate more than an AI chat interface: structured extraction, persistent records, traceable edits, deterministic rule-based triage, and a simple signal that helps a human reviewer notice repeated reports. The design keeps automated prompts separate from the final quality/safety decision.
 
-## AI Workflow
+## Existing limitations and next steps
 
-User Input
-
-↓
-
-Intent Detection
-
-↓
-
-Chat Response or Complaint Processing
-
-↓
-
-Complaint Extraction
-
-↓
-
-Severity Classification
-
-↓
-
-Complaint Report
-
----
-
-## Challenges Faced
-
-This project was built step by step and several problems came up during development.
-
-### 1. JSON Parsing Errors
-
-At one point the frontend crashed because invalid data like `"undefined"` was being stored in local storage.
-
-This was solved by adding safe JSON parsing and fallback values.
-
----
-
-### 2. AI Always Created Complaints
-
-Initially every user message, even something like "Hi", generated a complaint.
-
-To solve this, an intent classifier was added before complaint processing so the system could decide whether the user wanted to chat or submit a complaint.
-
----
-
-### 3. Complaint Corrections
-
-Another challenge was allowing users to correct information.
-
-For example:
-
-> "Sorry, the product name is VMX instead of CMX."
-
-Instead of creating a new complaint, the system now updates only the changed field while keeping the previous complaint information.
-
----
-
-### 4. Severity Classification
-
-LLM responses were sometimes inconsistent.
-
-To make severity predictable, a rule-based classifier using pharmaceutical keywords was implemented after AI extraction.
-
----
-
-### 5. PDF Complaint Analysis
-
-Extracting structured information from uploaded PDFs required text extraction before sending the content to the AI workflow.
-
-PyMuPDF was used for this purpose.
-
----
-
-## Development Process
-
-This project was developed incrementally instead of writing everything at once.
-
-AI tools were used throughout development for:
-
-- brainstorming ideas
-- understanding errors
-- improving prompts
-- debugging code
-- refining the overall workflow
-
-The final architecture, integration between frontend and backend, testing, debugging and project improvements were done manually through multiple iterations.
-
----
-
-## Future Improvements
-
-Some features that can be added in the future:
-
-- Database integration
-- User authentication
-- Complaint history
-- Email notifications
-- Analytics dashboard
-- Cloud deployment
-- Investigation workflow
-
----
-
-## Demo
-
-The demo includes:
-
-- AI Complaint Chat
-- Complaint Updates
-- PDF Analysis
-- Severity Classification
-- Complaint Intelligence Report
-
----
-
-## Thank You
-
-This project was developed as part of the Avioa AI Internship Assignment.
-
-It was a great opportunity to explore FastAPI, React, LangGraph and LLM-based workflows while solving a real-world pharmaceutical use case.
+The local demo still uses one shared in-memory conversation context, has no authentication/multi-user session isolation, and stores files in a local upload directory. Before any real operational use, it would need controlled access, retention/deletion policy, secure file handling, stronger validation, status-transition controls, database migration/backup, reviewed severity rules, and validation by qualified quality/pharmacovigilance professionals.

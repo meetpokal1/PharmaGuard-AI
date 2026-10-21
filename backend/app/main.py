@@ -1,8 +1,9 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from agent.graph import create_agent
+from utils.case_store import list_complaints, get_complaint, get_case_events, get_batch_signals, get_case_summary, init_case_store
 import os
 import fitz
 
@@ -33,6 +34,68 @@ class ChatRequest(BaseModel):
 # Temporary memory storage
 # Later we move this to database (Mission 4)
 conversation_memory = {"demo-user": {"complaint_data": {}, "chat_history": []}}
+
+
+@app.on_event("startup")
+def startup_case_store():
+    init_case_store()
+
+
+@app.get("/complaints")
+def complaint_register(
+    limit: int = Query(50, ge=1, le=200),
+    severity: str | None = None,
+    status: str | None = None,
+    batch_number: str | None = None,
+):
+    """List saved cases for a review queue; filters are optional."""
+    return {
+        "cases": list_complaints(
+            limit=limit,
+            severity=severity,
+            status=status,
+            batch_number=batch_number,
+        )
+    }
+
+
+@app.get("/complaints/{complaint_id}/events")
+def complaint_events(complaint_id: str):
+    """Return create/update history for a single complaint case."""
+    case = get_complaint(complaint_id)
+    if case is None:
+        return JSONResponse(status_code=404, content={"error": "Complaint case not found"})
+    return {"events": get_case_events(complaint_id)}
+
+
+@app.get("/complaints/{complaint_id}")
+def complaint_detail(complaint_id: str):
+    case = get_complaint(complaint_id)
+    if case is None:
+        return JSONResponse(status_code=404, content={"error": "Complaint case not found"})
+    return {"case": case}
+
+
+@app.get("/analytics/summary")
+def complaint_summary():
+    """Return live dashboard counts from the persisted complaint register."""
+    return get_case_summary()
+
+
+@app.get("/analytics/batch-signals")
+def batch_signals(
+    days: int = Query(30, ge=1, le=365),
+    min_reports: int = Query(2, ge=2, le=100),
+):
+    """Return repeat product/batch patterns for qualified human review."""
+    return {
+        "window_days": days,
+        "signals": get_batch_signals(days=days, min_reports=min_reports),
+        "note": (
+            "Signals show repeated reports, not confirmed defects or causality. "
+            "Verify product/batch identity and investigate using approved procedures."
+        ),
+    }
 
 
 @app.get("/")

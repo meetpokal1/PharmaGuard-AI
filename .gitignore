@@ -11,3 +11,9 @@ frontend/node_modules/
 
 # VS Code
 .vscode/
+
+# Local complaint records and uploaded source documents (never commit business/PII data)
+backend/data/
+backend/uploads/*
+*.sqlite3
+*.db

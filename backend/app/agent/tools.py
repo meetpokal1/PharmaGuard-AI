@@ -1,5 +1,6 @@
 from ai_service import ask_ai, COMPLAINT_SCHEMA_KEYS
 from utils.complaint_id import generate_complaint_id
+from utils.case_store import save_complaint, get_batch_signals
 import json
 
 CRITICAL_KEYWORDS = [
@@ -165,6 +166,28 @@ def log_complaint_tool(state):
     complaint_data["risk_level"] = severity_result["risk_level"]
     complaint_data["recommended_action"] = severity_result["recommended_action"]
 
+    # Persist the case once its required details are present. Corrections reuse
+    # the existing complaint ID and create an audit event only when fields change.
+    saved_case = save_complaint(complaint_data)
+    complaint_data["created_at"] = saved_case["created_at"]
+    complaint_data["updated_at"] = saved_case["updated_at"]
+
+    signal_match = None
+    batch_key = str(complaint_data.get("batch_number") or "").strip().casefold()
+    product_key = str(complaint_data.get("product_name") or "").strip().casefold()
+    if batch_key:
+        for signal in get_batch_signals(days=30, min_reports=2):
+            if signal.get("batch_key") == batch_key and signal.get("product_key") == product_key:
+                signal_match = signal
+                break
+
+    if signal_match:
+        complaint_data["batch_signal"] = {
+            "report_count": signal_match["report_count"],
+            "critical_count": signal_match["critical_count"],
+            "review_note": signal_match["review_note"],
+        }
+
     product = complaint_data.get("product_name") or "the product"
 
     ai_reply = (
@@ -176,7 +199,13 @@ def log_complaint_tool(state):
         f"Department: {complaint_data['department']}\n\n"
         f"Reason: {complaint_data['severity_reason']}\n"
         f"Recommended action: {complaint_data['recommended_action']}\n\n"
-        f"Your complaint has been recorded successfully."
+        + (
+            f"Potential repeat-batch signal: {signal_match['report_count']} reports for "
+            f"this product/batch were recorded in the last 30 days. Verify the source cases; "
+            f"this signal does not confirm a defect.\n\n"
+            if signal_match else ""
+        )
+        + "Your complaint has been recorded successfully."
     )
 
     return {

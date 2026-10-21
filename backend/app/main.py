@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from agent.graph import create_agent
-from utils.case_store import list_complaints, get_complaint, get_case_events, get_batch_signals, init_case_store
+from utils.case_store import list_complaints, get_complaint, get_case_events, get_batch_signals, get_case_summary, init_case_store
 import os
 import fitz
 
@@ -74,6 +74,12 @@ def complaint_detail(complaint_id: str):
     if case is None:
         return JSONResponse(status_code=404, content={"error": "Complaint case not found"})
     return {"case": case}
+
+
+@app.get("/analytics/summary")
+def complaint_summary():
+    """Return live dashboard counts from the persisted complaint register."""
+    return get_case_summary()
 
 
 @app.get("/analytics/batch-signals")

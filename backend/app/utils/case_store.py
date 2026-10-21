@@ -9,6 +9,7 @@ import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from contextlib import contextmanager
 from typing import Any
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -46,9 +47,22 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
     return connection
 
 
+@contextmanager
+def _db(db_path: str | os.PathLike | None = None):
+    connection = _connect(db_path)
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
 def init_case_store(db_path: str | os.PathLike | None = None) -> None:
     """Create the case register and append-only event log if they do not exist."""
-    with _connect(db_path) as connection:
+    with _db(db_path) as connection:
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS complaint_cases (

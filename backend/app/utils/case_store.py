@@ -308,3 +308,21 @@ def get_batch_signals(
         }
         for row in rows
     ]
+
+
+
+def get_case_summary(db_path: str | os.PathLike | None = None) -> dict[str, int]:
+    """Compute dashboard counts from persisted cases rather than hard-coded placeholders."""
+    init_case_store(db_path)
+    with _db(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN LOWER(severity) = 'critical' THEN 1 ELSE 0 END), 0) AS critical,
+                COALESCE(SUM(CASE WHEN LOWER(status) NOT IN ('resolved', 'closed') THEN 1 ELSE 0 END), 0) AS pending,
+                COALESCE(SUM(CASE WHEN LOWER(status) IN ('resolved', 'closed') THEN 1 ELSE 0 END), 0) AS resolved
+            FROM complaint_cases
+            """
+        ).fetchone()
+        return {key: int(row[key]) for key in ("total", "critical", "pending", "resolved")}

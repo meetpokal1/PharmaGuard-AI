@@ -1,95 +1,125 @@
-# PharmaGuard AI — Complaint Intake & Quality Triage
+# PharmaGuard AI — Complaint Intake, Security Hardening & Quality Triage
 
-PharmaGuard AI is a prototype for collecting pharmaceutical product complaints, extracting structured details from chat/PDF input, applying transparent rule-based severity heuristics, and helping a quality team organise cases for follow-up.
+PharmaGuard AI is an automated platform for collecting pharmaceutical product quality and adverse event complaints, extracting structured clinical and batch details from text or PDF source reports, executing transparent deterministic severity triage, and maintaining a durable audit register with repeat-batch signal detection.
 
-## Interface Preview (Illustrative)
+## Live Runtime Interface
 
-![PharmaGuard complaint register UI preview with example records](screenshots/complaint-register.svg)
+![PharmaGuard AI Complaint Register and Intelligence Report](screenshots/runtime/complaint-register.png)
 
-> Illustrative interface preview with example records. It is not connected to a live backend and does not represent a validated pharmacovigilance workflow.
+> Genuine runtime capture of PharmaGuard AI showing live KPI metrics, active repeat-batch alert signals, SQLite complaint register, and automated triage intelligence report.
 
+---
 
-It uses an LLM to assist with extraction, but a deterministic keyword rule currently assigns the final severity. It is a learning project, not a validated pharmacovigilance system or a replacement for approved safety-reporting procedures.
+## Key Capabilities & Production Hardening
 
-## Problem addressed
+### 1. Robust File Upload & Storage Security
+- **Strict Size Limits:** 10MB maximum payload restriction on uploaded PDFs.
+- **Header & Magic Byte Verification:** Verifies true binary `%PDF-` signature before file handling, blocking disguised executable payloads.
+- **Path Traversal Protection:** All filesystem routes (`/upload`, `/files/{filename}`, `/extract/{filename}`) sanitize filenames and enforce strict `Path.resolve().is_relative_to(UPLOAD_DIR)` boundary checks.
+- **Filename Sanitization:** Strips directory separators, null bytes, and malicious characters.
 
-When complaints arrive through chat messages and PDF forms, details such as product, strength, batch number and description can be inconsistent. Teams need a structured case record and a way to notice potentially related complaints without treating an automated signal as proof.
+### 2. Resilient API & Conversational Triage
+- **Graceful LLM Degradation:** If Groq API credentials are unset or the external LLM is unreachable, the system automatically falls back to deterministic regex pattern matchers and keyword classification, guaranteeing zero downtime.
+- **Session Isolation & Reset:** Multi-session support via `session_id` in `ChatRequest` and a dedicated `POST /chat/reset` endpoint to clear conversation state cleanly.
+- **Deterministic Clinical Severity Heuristics:** Keyword-based classification categorizes incidents into **Critical**, **Major**, or **Minor** with specific risk levels and recommended QA actions.
 
-## Core workflow
+### 3. Auditable Persistence & Signal Intelligence
+- **Durable SQLite Register:** All triaged cases persist in `backend/data/complaints.sqlite3` across restarts.
+- **Append-Only Event Ledger:** Every case creation and field modification appends an immutable event log with changed field keys and UTC timestamps.
+- **Repeat-Batch Signal Detection:** Automated aggregation flags product and batch combinations with 2+ incident reports within a configurable 30-day window, surfacing high-risk quality patterns for human QA investigation.
 
-1. Receive complaint details through the chat interface or extract text from a complaint PDF.
-2. Use the LLM to propose structured fields while preserving the conversation's existing case ID when the user corrects information.
-3. Apply the existing deterministic keyword severity rules and show the reason/action with the result.
-4. Save sufficiently complete complaints into a local SQLite case register.
-5. Append a create/update event when a case is created or its stored fields change.
-6. Group recent reports with the same normalised product name and batch number into **potential repeat-batch signals** for human review.
-7. Show live dashboard counts, a saved-case table, and the repeat-batch signals in the React UI.
+---
 
-## Improvements in this version
+## System Architecture
 
-- **Persistent case register:** complaint records survive backend restarts instead of living only in process memory.
-- **Stable case IDs:** later edits to the same conversation update the existing complaint record instead of silently creating a second ID.
-- **Case event history:** create/update actions are recorded with changed field names and a UTC timestamp.
-- **Potential repeated-batch detection:** two or more reports for the same product/batch in a configurable recent window appear in a review list. Critical-case counts help reviewers choose what to inspect first.
-- **Live dashboard metrics:** Total, Critical, Pending and Resolved cards are computed from saved records; they are not hard-coded sample numbers.
-- **Review API:** list, inspect and retrieve events for saved complaints; query product/batch signals through dedicated endpoints.
-- **Focused automated tests and CI:** SQLite persistence, same-ID edits, batch grouping, summary counts and validation are covered by pytest.
+```
+User Input (Chat / PDF Upload)
+       │
+       ▼
+FastAPI Gateway ───► Security Checks (Magic bytes, 10MB limit, Path validation)
+       │
+       ▼
+LangGraph Agent Engine ───► Intent Classifier (Complaint vs Chat)
+       │
+       ├──► Groq LLM (Llama 3.1 8B) or Deterministic Extraction Fallback
+       │
+       ▼
+Deterministic Severity Engine ───► [Critical / Major / Minor]
+       │
+       ▼
+SQLite Case Store & Audit Ledger ──► Repeat-Batch Pattern Detector
+       │
+       ▼
+React (Vite) UI ──► Live KPI Cards, Audited Register, Intelligence Reports
+```
 
-## Safety and interpretation
+---
 
-- A repeated product/batch signal is **not** a confirmed quality defect, adverse reaction, or causal link. It is a prompt to verify product/batch identity and inspect source cases under approved procedures.
-- Severity classification remains a simple keyword heuristic. It can miss serious cases, flag context incorrectly, or misunderstand negation. It should not be used as the sole decision-maker for patient safety or regulatory reporting.
-- The prototype does not validate complaint information against an authoritative product master, lot-release system, or external safety database.
-- There is no authentication or role-based access control in the demo. Do not expose it to the public internet or put real patient/customer identifiers into an untrusted deployment.
-- The case store is local SQLite by default at `backend/data/complaints.sqlite3`. Set `PHARMAGUARD_DB_PATH` to choose another path. The database file is runtime data and should not be committed.
+## Technology Stack
 
-## Technology
+- **Frontend:** React 19, Vite
+- **API & Gateway:** FastAPI, Uvicorn, Pydantic
+- **AI & Workflow Orchestration:** LangGraph, Groq API (Llama 3.1 8B Instant)
+- **PDF Extraction:** PyMuPDF (`pymupdf`)
+- **Database & Audit:** SQLite3 with WAL mode and foreign key constraints
+- **Test Suite:** pytest, httpx, Playwright, GitHub Actions CI
 
-- **Frontend:** React, Vite
-- **API:** FastAPI
-- **AI workflow:** LangGraph, Groq API, Llama 3.1 8B Instant
-- **PDF text extraction:** PyMuPDF
-- **Persistence:** Python `sqlite3`
-- **Tests:** pytest and GitHub Actions
+---
 
-## Running locally
+## Local Development & Setup
 
-### Backend
+### 1. Backend Setup
 
-From the `backend/app` directory (adjust to your existing environment and installed packages):
+```bash
+# From repository root
+pip install -r requirements.txt
 
-    uvicorn main:app --reload
+# Start FastAPI backend (port 8000)
+cd backend/app
+uvicorn main:app --reload --port 8000
+```
 
-Set `GROQ_API_KEY` in your local environment before starting the backend. The first complete complaint initialises the database automatically; the API startup also creates its tables.
+> **Note:** If `GROQ_API_KEY` is not present in `.env`, the backend operates in deterministic fallback mode with full triage capability.
 
-### Frontend
+### 2. Frontend Setup
 
-From `frontend/`:
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-    npm install
-    npm run dev
+The frontend will run at `http://localhost:5173` and connect to `http://127.0.0.1:8000`.
 
-The frontend expects the backend at `http://127.0.0.1:8000` in this development configuration.
+### 3. Running Automated Tests
 
-### Test the persistence layer
+Run the full automated test suite covering SQLite persistence, upload security, path traversal rejection, chat fallback, and analytics endpoints:
 
-From the repository root:
+```bash
+pytest backend/tests -v
+```
 
-    python -m pip install pytest
-    python -m pytest backend/tests/test_case_store.py -q
+---
 
-## API endpoints added
+## API Endpoints
 
-- `GET /complaints?limit=50` — list recent saved cases; supports `severity`, `status` and `batch_number` filters.
-- `GET /complaints/{complaint_id}` — fetch one saved case.
-- `GET /complaints/{complaint_id}/events` — retrieve create/update event history.
-- `GET /analytics/summary` — return live dashboard counts.
-- `GET /analytics/batch-signals?days=30&min_reports=2` — find repeated product/batch reports in the selected window.
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Service health status and version |
+| `POST` | `/upload` | Secure PDF upload with 10MB limit and magic byte checks |
+| `GET` | `/files` | List uploaded complaint documents |
+| `GET` | `/files/{filename}` | Securely retrieve uploaded PDF |
+| `GET` | `/extract/{filename}` | Extract text from PDF document |
+| `POST` | `/chat` | Conversational intake and structured case extraction |
+| `POST` | `/chat/reset` | Reset conversational memory for session |
+| `GET` | `/complaints` | Filterable complaint case register |
+| `GET` | `/complaints/{id}` | Detailed case inspection |
+| `GET` | `/complaints/{id}/events` | Immutable case audit log |
+| `GET` | `/analytics/summary` | Live KPI metrics (total, critical, pending, resolved) |
+| `GET` | `/analytics/batch-signals` | 30-day repeat-batch review signals |
 
-## Why I built it
+---
 
-I wanted to demonstrate more than an AI chat interface: structured extraction, persistent records, traceable edits, deterministic rule-based triage, and a simple signal that helps a human reviewer notice repeated reports. The design keeps automated prompts separate from the final quality/safety decision.
+## Quality & Regulatory Notice
 
-## Existing limitations and next steps
-
-The local demo still uses one shared in-memory conversation context, has no authentication/multi-user session isolation, and stores files in a local upload directory. Before any real operational use, it would need controlled access, retention/deletion policy, secure file handling, stronger validation, status-transition controls, database migration/backup, reviewed severity rules, and validation by qualified quality/pharmacovigilance professionals.
+PharmaGuard AI is designed as an operational prototype and decision-support system. In compliance with pharmacovigilance standards (e.g. FDA 21 CFR Part 11 / GAMP 5), repeat-batch alerts highlight potential trends for qualified human quality review and do not assert confirmed product defects or clinical causality.

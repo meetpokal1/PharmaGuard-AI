@@ -2,6 +2,13 @@
 
 PharmaGuard AI is a prototype for collecting pharmaceutical product complaints, extracting structured details from chat/PDF input, applying transparent rule-based severity heuristics, and helping a quality team organise cases for follow-up.
 
+## Interface Preview (Illustrative)
+
+![PharmaGuard complaint register UI preview with example records](screenshots/complaint-register.svg)
+
+> Illustrative interface preview with example records. It is not connected to a live backend and does not represent a validated pharmacovigilance workflow.
+
+
 It uses an LLM to assist with extraction, but a deterministic keyword rule currently assigns the final severity. It is a learning project, not a validated pharmacovigilance system or a replacement for approved safety-reporting procedures.
 
 ## Problem addressed
